@@ -280,6 +280,7 @@ require (
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/jhump/protoreflect v1.15.1 // indirect
 	github.com/jinzhu/copier v0.3.5 // indirect
+	github.com/jlaffaye/ftp v0.2.0
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/k0kubun/pp v3.0.1+incompatible // indirect
