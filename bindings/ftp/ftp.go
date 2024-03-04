@@ -98,9 +98,14 @@ func (f *Ftp) create(ctx context.Context, req *bindings.InvokeRequest) (*binding
 		return nil, fmt.Errorf("ftp binding error: filename is empty")
 	}
 
-	absPath, relPath, err := getSecureAbsRelPath(f.metadata.RootPath, filename)
+	// absPath, relPath, err := getSecureAbsRelPath(f.metadata.RootPath, filename)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error getting absolute path for file %s: %w", filename, err)
+	// }
+
+	absPath, dir, exactFilename, err := getSecureDirAndFilename(f.metadata.RootPath, filename)
 	if err != nil {
-		return nil, fmt.Errorf("error getting absolute path for file %s: %w", filename, err)
+		return nil, fmt.Errorf("ftp binding error: getting directory and file name for %s %s: %w", f.metadata.RootPath, filename, err)
 	}
 
 	c, err := ftp.Dial(metadata.Server)
@@ -113,7 +118,9 @@ func (f *Ftp) create(ctx context.Context, req *bindings.InvokeRequest) (*binding
 		return nil, fmt.Errorf("ftp binding error: login error with user: %s: %w", metadata.User, err)
 	}
 
-	err = c.Stor(absPath, r)
+	c.ChangeDir(dir)
+
+	err = c.Stor(exactFilename, r)
 	if err != nil {
 		return nil, fmt.Errorf("ftp binding error: store error %w", err)
 	}
@@ -124,7 +131,7 @@ func (f *Ftp) create(ctx context.Context, req *bindings.InvokeRequest) (*binding
 	}
 
 	jsonResponse, err := json.Marshal(createResponse{
-		FileName: relPath,
+		FileName: absPath,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("ftp binding error: error encoding response as JSON: %w", err)
@@ -150,6 +157,17 @@ func getSecureAbsRelPath(rootPath string, filename string) (absPath string, relP
 	if err != nil {
 		return
 	}
+
+	return
+}
+
+func getSecureDirAndFilename(rootPath string, filename string) (absPath string, dir string, exactFilename string, err error) {
+	absPath, err = securejoin.SecureJoin(rootPath, filename)
+	if err != nil {
+		return
+	}
+	dir = filepath.Dir(absPath)
+	exactFilename = filepath.Base(absPath)
 
 	return
 }
