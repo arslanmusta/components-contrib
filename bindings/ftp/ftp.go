@@ -118,7 +118,10 @@ func (f *Ftp) create(ctx context.Context, req *bindings.InvokeRequest) (*binding
 		return nil, fmt.Errorf("ftp binding error: login error with user: %s: %w", metadata.User, err)
 	}
 
-	c.ChangeDir(dir)
+	err = c.ChangeDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("ftp binding error: directory change error for %s: %w", dir, err)
+	}
 
 	err = c.Stor(exactFilename, r)
 	if err != nil {
