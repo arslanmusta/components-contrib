@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 
@@ -27,6 +28,8 @@ func (f *Ftp) Invoke(ctx context.Context, req *bindings.InvokeRequest) (*binding
 		return f.create(ctx, req)
 	case bindings.ListOperation:
 		return f.list(ctx, req)
+	case bindings.GetOperation:
+		return f.get(ctx, req)
 	default:
 		return nil, fmt.Errorf("ftp binding error. unsupported operation %s", req.Operation)
 	}
@@ -37,6 +40,7 @@ func (f *Ftp) Operations() []bindings.OperationKind {
 	return []bindings.OperationKind{
 		bindings.CreateOperation,
 		bindings.ListOperation,
+		bindings.GetOperation,
 	}
 }
 
@@ -56,6 +60,9 @@ type createResponse struct {
 type listResponse struct {
 	Directory string     `json:"directory"`
 	FileInfos []fileInfo `json:"fileInfos"`
+}
+
+type getResponse struct {
 }
 
 type fileInfo struct {
@@ -200,6 +207,55 @@ func (f *Ftp) list(_ context.Context, req *bindings.InvokeRequest) (*bindings.In
 
 	return &bindings.InvokeResponse{
 		Data: jsonResponse,
+	}, nil
+}
+
+func (f *Ftp) get(_ context.Context, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error) {
+	metadata, err := f.metadata.mergeWithRequestMetadata(req)
+	if err != nil {
+		return nil, fmt.Errorf("ftp binding error: error merging metadata: %w", err)
+	}
+
+	// r := strings.NewReader(string(req.Data))
+
+	filename := req.Metadata["Filename"]
+	if filename == "" {
+		return nil, fmt.Errorf("ftp binding error: filename is empty")
+	}
+
+	_, dir, exactFilename, err := getSecureDirAndFilename(f.metadata.RootPath, filename)
+	if err != nil {
+		return nil, fmt.Errorf("ftp binding error: getting directory and file name for %s %s: %w", f.metadata.RootPath, filename, err)
+	}
+
+	c, err := ftp.Dial(metadata.Server)
+	if err != nil {
+		return nil, fmt.Errorf("ftp binding error: connection error to %s: %w", metadata.Server, err)
+	}
+
+	err = c.Login(metadata.User, metadata.Password)
+	if err != nil {
+		return nil, fmt.Errorf("ftp binding error: login error with user: %s: %w", metadata.User, err)
+	}
+
+	err = c.ChangeDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("ftp binding error: directory change error for %s: %w", dir, err)
+	}
+
+	res, err := c.Retr(exactFilename)
+	if err != nil {
+		return nil, fmt.Errorf("ftp binding error: retrive error fpr: %s: %w", filename, err)
+	}
+	defer res.Close()
+
+	buf, err := io.ReadAll(res)
+	if err != nil {
+		return nil, fmt.Errorf("ftp binding error: retrive error fpr: %s: %w", filename, err)
+	}
+
+	return &bindings.InvokeResponse{
+		Data: buf,
 	}, nil
 }
 
