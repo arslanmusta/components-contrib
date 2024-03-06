@@ -9,7 +9,6 @@ import (
 
 	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/dapr/components-contrib/bindings"
-	commonutils "github.com/dapr/components-contrib/common/utils"
 	"github.com/dapr/kit/logger"
 	kitmd "github.com/dapr/kit/metadata"
 
@@ -42,11 +41,12 @@ func (f *Ftp) Operations() []bindings.OperationKind {
 }
 
 type ftpMetadata struct {
-	RootPath string `json:"rootPath"`
-	Server   string `json:"server"`
-	Port     string `json:"port"`
-	User     string `json:"user"`
-	Password string `json:"password"`
+	RootPath  string `json:"rootPath"`
+	Server    string `json:"server"`
+	Port      string `json:"port"`
+	User      string `json:"user"`
+	Password  string `json:"password"`
+	Directory string `json:"directory"`
 }
 
 type createResponse struct {
@@ -60,6 +60,7 @@ type listResponse struct {
 
 type fileInfo struct {
 	Filename string `json:"filename"`
+	FileType string `json:"filetype"`
 }
 
 func (f *Ftp) Init(_ context.Context, metadata bindings.Metadata) error {
@@ -93,9 +94,9 @@ func (f *Ftp) create(_ context.Context, req *bindings.InvokeRequest) (*bindings.
 		return nil, fmt.Errorf("ftp binding error: error merging metadata: %w", err)
 	}
 
-	r := strings.NewReader(commonutils.Unquote(req.Data))
+	r := strings.NewReader(string(req.Data))
 
-	filename := req.Metadata["filename"]
+	filename := req.Metadata["Filename"]
 	if filename == "" {
 		return nil, fmt.Errorf("ftp binding error: filename is empty")
 	}
@@ -117,7 +118,14 @@ func (f *Ftp) create(_ context.Context, req *bindings.InvokeRequest) (*bindings.
 
 	err = c.ChangeDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("ftp binding error: directory change error for %s: %w", dir, err)
+		err = c.MakeDir(dir)
+		if err != nil {
+			return nil, fmt.Errorf("ftp binding error: directory create error for %s: %w", dir, err)
+		}
+		err = c.ChangeDir(dir)
+		if err != nil {
+			return nil, fmt.Errorf("ftp binding error: directory change error for %s: %w", dir, err)
+		}
 	}
 
 	err = c.Stor(exactFilename, r)
@@ -158,20 +166,20 @@ func (f *Ftp) list(_ context.Context, req *bindings.InvokeRequest) (*bindings.In
 		return nil, fmt.Errorf("ftp binding error: login error with user: %s: %w", metadata.User, err)
 	}
 
-	filename := req.Metadata["filename"]
-	_, dir, _, err := getSecureDirAndFilename(metadata.RootPath, filename)
+	directory := metadata.Directory
+	dir, err := getSecureDir(metadata.RootPath, directory)
 	if err != nil {
-		return nil, fmt.Errorf("ftp binding error: getting directory and file name for %s %s: %w", f.metadata.RootPath, filename, err)
-	}
-
-	err = c.ChangeDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("ftp binding error: directory change error for %s: %w", dir, err)
+		return nil, fmt.Errorf("ftp binding error: getting directory for %s : %w", directory, err)
 	}
 
 	entries, err := c.List(dir)
 	if err != nil {
 		return nil, fmt.Errorf("ftp binding error. directory list error %s: %w", dir, err)
+	}
+
+	err = c.Quit()
+	if err != nil {
+		return nil, fmt.Errorf("ftp binding error. ftp quit error %s: %w", dir, err)
 	}
 
 	listResponse := listResponse{
@@ -181,6 +189,7 @@ func (f *Ftp) list(_ context.Context, req *bindings.InvokeRequest) (*bindings.In
 	for _, entry := range entries {
 		listResponse.FileInfos = append(listResponse.FileInfos, fileInfo{
 			Filename: entry.Name,
+			FileType: entry.Type.String(),
 		})
 	}
 
@@ -197,16 +206,34 @@ func (f *Ftp) list(_ context.Context, req *bindings.InvokeRequest) (*bindings.In
 func (metadata ftpMetadata) mergeWithRequestMetadata(req *bindings.InvokeRequest) (ftpMetadata, error) {
 	merged := metadata
 
+	if val, ok := req.Metadata["Directory"]; ok && val != "" {
+		merged.Directory = val
+	}
+
 	return merged, nil
 }
 
 func getSecureDirAndFilename(rootPath string, filename string) (absPath string, dir string, exactFilename string, err error) {
+	rootPath, err = securejoin.SecureJoin(".", rootPath)
+	if err != nil {
+		return
+	}
 	absPath, err = securejoin.SecureJoin(rootPath, filename)
 	if err != nil {
 		return
 	}
 	dir = filepath.Dir(absPath)
 	exactFilename = filepath.Base(absPath)
+
+	return
+}
+
+func getSecureDir(rootPath string, directory string) (secureDirectory string, err error) {
+	rootPath, err = securejoin.SecureJoin(".", rootPath)
+	if err != nil {
+		return
+	}
+	secureDirectory, err = securejoin.SecureJoin(rootPath, directory)
 
 	return
 }
