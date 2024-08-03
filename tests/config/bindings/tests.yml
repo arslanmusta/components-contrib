@@ -89,3 +89,5 @@ components:
       output:
         key: $((uuid))
       outputData: '{"data": {"maxResults": 10}}'
+  - component: ftp
+    operations: ["create", "opetations", "get", "list"]

@@ -1,0 +1,17 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: ftp-binding
+  namespace: default
+spec:
+  type: bindings.ftp
+  version: v1
+  metadata:
+  - name: server
+    value: localhost:21
+  - name: rootPath
+    value: .
+  - name: user
+    value: admin
+  - name: password
+    value: 12345
